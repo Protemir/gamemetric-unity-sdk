@@ -1,0 +1,14 @@
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# IDE
+.vs/
+.idea/
+*.user
+
+# Build output (should not exist in a source-only package, but just in case)
+[Bb]in/
+[Oo]bj/
