@@ -72,6 +72,10 @@ namespace GameMetricSDK
         // counted events, not hundreds (created per session in Initialize).
         private static ErrorAggregator _errorAggregator;
         private static bool _errorCapWarned;
+
+        // Per-thread re-entrancy guard: captured logs can arrive on background
+        // threads (logMessageReceivedThreaded), so each thread needs its own guard.
+        [ThreadStatic]
         private static bool _isCapturingLog;
 
         private static GameMetricConfig _config;
@@ -360,8 +364,8 @@ namespace GameMetricSDK
                 // Opt back in: resume crash capture and open a fresh session.
                 if (_config.CaptureErrors)
                 {
-                    Application.logMessageReceived -= HandleUnityLog;
-                    Application.logMessageReceived += HandleUnityLog;
+                    Application.logMessageReceivedThreaded -= HandleUnityLog;
+                    Application.logMessageReceivedThreaded += HandleUnityLog;
                 }
 
                 StartNewSession();
@@ -370,7 +374,7 @@ namespace GameMetricSDK
             else
             {
                 // Opt out: stop capturing and purge anything not yet delivered.
-                Application.logMessageReceived -= HandleUnityLog;
+                Application.logMessageReceivedThreaded -= HandleUnityLog;
                 _dispatcher.DiscardQueued();
                 _store.Clear();
                 GameMetricLog.Info("Collection disabled; queued and cached events cleared.");
@@ -603,8 +607,8 @@ namespace GameMetricSDK
             // guarantees a single handler even if this were somehow reached twice.
             if (_config.CaptureErrors && _collectionEnabled)
             {
-                Application.logMessageReceived -= HandleUnityLog;
-                Application.logMessageReceived += HandleUnityLog;
+                Application.logMessageReceivedThreaded -= HandleUnityLog;
+                Application.logMessageReceivedThreaded += HandleUnityLog;
             }
 
             // One session_start per session, carrying device metadata. No-op while
@@ -663,8 +667,11 @@ namespace GameMetricSDK
 
         /// <summary>
         /// Unity log hook: turns Error/Assert/Exception logs into "error" events.
-        /// Registered on the main-thread <c>Application.logMessageReceived</c>, so
-        /// no locking beyond the already-thread-safe pool/queue is needed.
+        /// Registered on <c>Application.logMessageReceivedThreaded</c>, so it also
+        /// catches errors logged from background threads / the Job System — meaning
+        /// this can run OFF the main thread. That's safe here: the aggregator, event
+        /// pool and dispatch queue are all thread-safe, the re-entrancy guard is
+        /// [ThreadStatic], and the throttle clock avoids main-thread-only Unity APIs.
         /// </summary>
         private static void HandleUnityLog(string condition, string stackTrace, LogType type)
         {
@@ -718,7 +725,7 @@ namespace GameMetricSDK
             }
 
             _errorAggregator.Observe(
-                severity, logType, condition, stackTrace, Time.realtimeSinceStartup,
+                severity, logType, condition, stackTrace, ErrorClockSeconds(),
                 out var emit, out var report, out var capReached);
 
             if (capReached)
@@ -794,12 +801,21 @@ namespace GameMetricSDK
                 return;
             }
 
-            var pending = _errorAggregator.DrainPending(Time.realtimeSinceStartup);
+            var pending = _errorAggregator.DrainPending(ErrorClockSeconds());
             for (var i = 0; i < pending.Count; i++)
             {
                 EmitErrorReport(pending[i], null, priorityFlush: false);
             }
         }
+
+        /// <summary>
+        /// Thread-safe elapsed-seconds source for the error aggregator's throttle
+        /// window. Unlike Time.realtimeSinceStartup (main-thread only), this can be
+        /// called from a background-thread log capture. Only deltas matter to the
+        /// aggregator, so the arbitrary origin is fine; Stopwatch is monotonic.
+        /// </summary>
+        private static float ErrorClockSeconds() =>
+            (float)(System.Diagnostics.Stopwatch.GetTimestamp() / (double)System.Diagnostics.Stopwatch.Frequency);
 
         // ----- session lifecycle (wired to the runner) ----------------------
 

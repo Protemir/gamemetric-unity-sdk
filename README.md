@@ -179,9 +179,11 @@ counts and durations stay accurate instead of one id spanning the whole process.
 ### Crash & error analytics
 
 Uncaught exceptions and `Debug.LogError` / `Debug.Assert` are captured
-automatically as `error` events. Identical errors (same stack) are **deduplicated**
-by a stable signature hash and counted, so a per-frame crash loop becomes a couple
-of counted events instead of hundreds — the delivery pipeline is never flooded.
+automatically as `error` events — including errors thrown on **background threads
+and the Job System** (capture hooks `logMessageReceivedThreaded`). Identical errors
+(same stack) are **deduplicated** by a stable signature hash and counted, so a
+per-frame crash loop becomes a couple of counted events instead of hundreds — the
+delivery pipeline is never flooded.
 
 ### Compiling the SDK out
 
@@ -233,6 +235,14 @@ build-time kill switch, define `GAMEMETRIC_DISABLED`.
 ---
 
 ## Release Notes
+
+### v1.1.5
+
+- **Background-thread crash capture** — error/exception capture now hooks
+  `logMessageReceivedThreaded`, so exceptions thrown on background threads or the
+  Job System are captured too (previously only the main thread). The capture path
+  is thread-safe: a per-thread re-entrancy guard and a monotonic clock that avoids
+  main-thread-only Unity APIs.
 
 ### v1.1.4
 
