@@ -4,6 +4,7 @@
   "displayName": "GameMetric SDK",
   "description": "Official Unity SDK for the GameMetric analytics platform. Non-blocking event logging, batched background delivery, and offline caching.",
   "unity": "2020.3",
+  "license": "MIT",
   "author": {
     "name": "GameMetric",
     "url": "https://gamemetric.dev"
