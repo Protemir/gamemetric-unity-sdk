@@ -23,6 +23,11 @@ namespace GameMetricSDK
         private readonly string _tempFilePath;
         private readonly object _lock = new object();
 
+        // On WebGL the disk cache can't persist (virtual FS not flushed to IndexedDB
+        // without FS.syncfs) and the Task.Run write offload has no thread, so the
+        // disk cache is skipped — config is simply re-fetched on each page load.
+        private readonly bool _disabled = Application.platform == RuntimePlatform.WebGLPlayer;
+
         public RemoteConfigCache()
         {
             _directory = Path.Combine(Application.persistentDataPath, "gamemetric");
@@ -33,6 +38,11 @@ namespace GameMetricSDK
         /// <summary>Synchronously reads the cached payload, or null if none/unreadable. Called once at Initialize.</summary>
         public string LoadOrNull()
         {
+            if (_disabled)
+            {
+                return null;
+            }
+
             lock (_lock)
             {
                 try
@@ -54,7 +64,7 @@ namespace GameMetricSDK
         /// </summary>
         public void Save(string json)
         {
-            if (string.IsNullOrEmpty(json))
+            if (_disabled || string.IsNullOrEmpty(json))
             {
                 return;
             }

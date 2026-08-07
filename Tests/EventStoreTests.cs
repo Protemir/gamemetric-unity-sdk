@@ -101,6 +101,20 @@ namespace GameMetricSDK.Tests
         }
 
         [Test]
+        public void InMemoryMode_AppendReadRemoveClear()
+        {
+            // WebGL path: no disk, no Task.Run — the backend is an in-memory cache.
+            var s = new EventStore(5000, "unused", inMemory: true);
+            s.AppendBlocking(L("a", "b", "c"));
+            Assert.IsTrue(s.HasDataAsync().GetAwaiter().GetResult());
+            CollectionAssert.AreEqual(new[] { "a", "b" }, s.ReadAsync(2).GetAwaiter().GetResult());
+            s.RemoveFirstAsync(2).GetAwaiter().GetResult();
+            CollectionAssert.AreEqual(new[] { "c" }, s.ReadAsync(10).GetAwaiter().GetResult());
+            s.Clear();
+            Assert.IsFalse(s.HasDataAsync().GetAwaiter().GetResult());
+        }
+
+        [Test]
         public void Clear_DeletesTheEntireCache()
         {
             var s = NewStore();

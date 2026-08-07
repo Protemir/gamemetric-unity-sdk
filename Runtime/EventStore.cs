@@ -40,23 +40,38 @@ namespace GameMetricSDK
         private readonly int _maxLines;
         private readonly object _lock = new object();
 
-        // Authoritative in-memory count of cached (non-blank) lines.
+        // On WebGL the disk cache can't work reliably (virtual FS not flushed to
+        // IndexedDB without FS.syncfs, and no threads for the Task.Run offload), so
+        // we keep an in-memory cache instead: in-session retry without a false
+        // cross-reload persistence promise.
+        private readonly bool _inMemory;
+        private readonly InMemoryEventCache _memory;
+
+        // Authoritative in-memory count of cached (non-blank) lines (disk mode).
         // -1 = "not yet initialized from disk"; initialized lazily on first use.
         private int _lineCount = -1;
 
         public EventStore(int maxCachedEvents)
-            : this(maxCachedEvents, Path.Combine(Application.persistentDataPath, "gamemetric"))
+            : this(maxCachedEvents, Path.Combine(Application.persistentDataPath, "gamemetric"),
+                   Application.platform == RuntimePlatform.WebGLPlayer)
         {
         }
 
-        // Test seam: lets tests target an isolated directory instead of the shared
-        // persistentDataPath cache. Production always uses the parameterless-path ctor.
-        internal EventStore(int maxCachedEvents, string directory)
+        // Test seam: lets tests target an isolated directory (disk mode) or force
+        // the in-memory backend. Production picks the backend from the platform.
+        internal EventStore(int maxCachedEvents, string directory, bool inMemory = false)
         {
             _maxLines = Math.Max(1, maxCachedEvents);
             _directory = directory;
             _filePath = Path.Combine(_directory, "offline_events.ndjson");
             _tempFilePath = _filePath + ".tmp";
+            _inMemory = inMemory;
+
+            if (_inMemory)
+            {
+                _memory = new InMemoryEventCache(_maxLines);
+                GameMetricLog.Info("Offline cache is in-memory (WebGL); events are not persisted across page reloads.");
+            }
         }
 
         /// <summary>
@@ -66,6 +81,11 @@ namespace GameMetricSDK
         /// </summary>
         public Task<bool> HasDataAsync()
         {
+            if (_inMemory)
+            {
+                return Task.FromResult(_memory.HasData);
+            }
+
             lock (_lock)
             {
                 if (_lineCount >= 0)
@@ -87,6 +107,11 @@ namespace GameMetricSDK
         /// <summary>Reads up to <paramref name="max"/> of the oldest cached event lines (streamed, on a pool thread).</summary>
         public Task<List<string>> ReadAsync(int max)
         {
+            if (_inMemory)
+            {
+                return Task.FromResult(_memory.Read(max));
+            }
+
             return Task.Run(() =>
             {
                 lock (_lock)
@@ -102,6 +127,12 @@ namespace GameMetricSDK
         {
             if (count <= 0)
             {
+                return Task.CompletedTask;
+            }
+
+            if (_inMemory)
+            {
+                _memory.RemoveFirst(count);
                 return Task.CompletedTask;
             }
 
@@ -128,6 +159,12 @@ namespace GameMetricSDK
                 return Task.CompletedTask;
             }
 
+            if (_inMemory)
+            {
+                _memory.Append(eventJsonLines);
+                return Task.CompletedTask;
+            }
+
             var snapshot = new List<string>(eventJsonLines);
             return Task.Run(() =>
             {
@@ -151,6 +188,12 @@ namespace GameMetricSDK
                 return;
             }
 
+            if (_inMemory)
+            {
+                _memory.Append(eventJsonLines);
+                return;
+            }
+
             lock (_lock)
             {
                 EnsureCountInitialized();
@@ -161,6 +204,12 @@ namespace GameMetricSDK
         /// <summary>Deletes the entire offline cache. Used when a user opts out of collection.</summary>
         public void Clear()
         {
+            if (_inMemory)
+            {
+                _memory.Clear();
+                return;
+            }
+
             lock (_lock)
             {
                 try

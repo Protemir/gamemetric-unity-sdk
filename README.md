@@ -234,6 +234,15 @@ build-time kill switch, define `GAMEMETRIC_DISABLED`.
 
 ## Release Notes
 
+### v1.1.4
+
+- **WebGL offline cache** — on WebGL the offline cache is now in-memory instead of
+  writing to `Application.persistentDataPath` (a browser virtual filesystem that
+  isn't persisted across reloads without `FS.syncfs`, on a single-threaded runtime
+  where the disk path's background I/O can't run). In-session retry works; un-sent
+  events don't survive a page reload — the honest behavior for the web. The
+  remote-config disk cache is likewise skipped on WebGL (config re-fetches on load).
+
 ### v1.1.3
 
 - **Nested event properties** — property values can now be nested dictionaries and
