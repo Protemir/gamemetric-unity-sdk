@@ -84,5 +84,60 @@ namespace GameMetricSDK.Tests
             var props = (Dictionary<string, object>)WriteAndParse(evt)["properties"];
             Assert.AreEqual(tricky, props["q"]);
         }
+
+        // P2-2: nested dictionaries and lists serialize as real JSON, not
+        // "System.Collections..." from a ToString() fallback.
+        [Test]
+        public void NestedObjectsAndArrays_SerializeAndRoundTrip()
+        {
+            var evt = new GameMetricEvent { EventName = "e" };
+            evt.Properties["nested"] = new Dictionary<string, object> { { "a", 1 }, { "b", "x" } };
+            evt.Properties["list"] = new List<object> { 1, "two", true };
+            evt.Properties["deep"] = new Dictionary<string, object>
+            {
+                { "arr", new List<object> { new Dictionary<string, object> { { "k", 9 } } } },
+            };
+
+            var props = (Dictionary<string, object>)WriteAndParse(evt)["properties"];
+
+            var nested = (Dictionary<string, object>)props["nested"];
+            Assert.AreEqual(1.0, (double)nested["a"]);
+            Assert.AreEqual("x", nested["b"]);
+
+            var list = (List<object>)props["list"];
+            Assert.AreEqual(3, list.Count);
+            Assert.AreEqual(1.0, (double)list[0]);
+            Assert.AreEqual("two", list[1]);
+            Assert.AreEqual(true, list[2]);
+
+            var deepArr = (List<object>)((Dictionary<string, object>)props["deep"])["arr"];
+            Assert.AreEqual(9.0, (double)((Dictionary<string, object>)deepArr[0])["k"]);
+        }
+
+        // P2-7: "G17" round-trips a double exactly (unlike the old "R").
+        [Test]
+        public void DoubleValues_RoundTripExactly()
+        {
+            var evt = new GameMetricEvent { EventName = "e" };
+            var a = 0.1 + 0.2;   // 0.30000000000000004
+            var b = 1.0 / 3.0;
+            evt.Properties["a"] = a;
+            evt.Properties["b"] = b;
+
+            var props = (Dictionary<string, object>)WriteAndParse(evt)["properties"];
+            Assert.AreEqual(a, (double)props["a"]);
+            Assert.AreEqual(b, (double)props["b"]);
+        }
+
+        [Test]
+        public void FloatValue_RoundTripsToFloatPrecision()
+        {
+            var evt = new GameMetricEvent { EventName = "e" };
+            const float f = 0.1f;
+            evt.Properties["f"] = f;
+
+            var props = (Dictionary<string, object>)WriteAndParse(evt)["properties"];
+            Assert.AreEqual((double)f, (double)props["f"], 1e-6);
+        }
     }
 }

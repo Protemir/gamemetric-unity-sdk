@@ -45,6 +45,10 @@ namespace GameMetricSDK
             WriteString(sb, value);
         }
 
+        // Bound on nesting depth so a cyclic reference in a property value degrades
+        // to null instead of overflowing the stack.
+        private const int MaxDepth = 32;
+
         private static void WriteObject(StringBuilder sb, Dictionary<string, object> map)
         {
             sb.Append('{');
@@ -61,14 +65,14 @@ namespace GameMetricSDK
                     first = false;
                     WriteString(sb, kv.Key);
                     sb.Append(':');
-                    WriteValue(sb, kv.Value);
+                    WriteValue(sb, kv.Value, 1);
                 }
             }
 
             sb.Append('}');
         }
 
-        private static void WriteValue(StringBuilder sb, object value)
+        private static void WriteValue(StringBuilder sb, object value, int depth)
         {
             if (value == null)
             {
@@ -100,7 +104,8 @@ namespace GameMetricSDK
                     return;
                 }
 
-                sb.Append(f.ToString("R", CultureInfo.InvariantCulture));
+                // "G9" round-trips a float exactly; "R" is documented as unreliable.
+                sb.Append(f.ToString("G9", CultureInfo.InvariantCulture));
                 return;
             }
 
@@ -112,7 +117,8 @@ namespace GameMetricSDK
                     return;
                 }
 
-                sb.Append(d.ToString("R", CultureInfo.InvariantCulture));
+                // "G17" round-trips a double exactly; "R" is documented as unreliable.
+                sb.Append(d.ToString("G17", CultureInfo.InvariantCulture));
                 return;
             }
 
@@ -135,8 +141,73 @@ namespace GameMetricSDK
                 return;
             }
 
-            // Enums, chars, and anything exotic are stored as their string form.
+            // Nested structures. IDictionary is checked before IEnumerable because
+            // dictionaries are also enumerable. Past MaxDepth (a cyclic reference)
+            // we emit null rather than overflow the stack.
+            if (value is System.Collections.IDictionary dict)
+            {
+                if (depth >= MaxDepth)
+                {
+                    sb.Append("null");
+                    return;
+                }
+
+                WriteDictionary(sb, dict, depth);
+                return;
+            }
+
+            if (value is System.Collections.IEnumerable seq)
+            {
+                if (depth >= MaxDepth)
+                {
+                    sb.Append("null");
+                    return;
+                }
+
+                WriteArray(sb, seq, depth);
+                return;
+            }
+
+            // Enums, chars, and anything else exotic are stored as their string form.
             WriteString(sb, value.ToString());
+        }
+
+        private static void WriteDictionary(StringBuilder sb, System.Collections.IDictionary map, int depth)
+        {
+            sb.Append('{');
+            var first = true;
+            foreach (System.Collections.DictionaryEntry entry in map)
+            {
+                if (!first)
+                {
+                    sb.Append(',');
+                }
+
+                first = false;
+                WriteString(sb, entry.Key?.ToString() ?? string.Empty);
+                sb.Append(':');
+                WriteValue(sb, entry.Value, depth + 1);
+            }
+
+            sb.Append('}');
+        }
+
+        private static void WriteArray(StringBuilder sb, System.Collections.IEnumerable seq, int depth)
+        {
+            sb.Append('[');
+            var first = true;
+            foreach (var item in seq)
+            {
+                if (!first)
+                {
+                    sb.Append(',');
+                }
+
+                first = false;
+                WriteValue(sb, item, depth + 1);
+            }
+
+            sb.Append(']');
         }
 
         private static void WriteString(StringBuilder sb, string s)

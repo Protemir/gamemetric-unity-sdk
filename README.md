@@ -214,7 +214,7 @@ build-time kill switch, define `GAMEMETRIC_DISABLED`.
 | Member | Description |
 |---|---|
 | `Initialize()` / `Initialize(apiKey)` / `Initialize(apiKey, gameVersion, enableDebugLogs, baseUrl)` | Start a session. The parameterless overload reads **Project Settings → GameMetric**. |
-| `LogEvent(name, parameters = null)` | Queue a custom event. Non-blocking; `parameters` become the event's JSON `properties`. |
+| `LogEvent(name, parameters = null)` | Queue a custom event. Non-blocking; `parameters` become the event's JSON `properties` (primitives or nested dictionaries/lists). |
 | `LogMonetization(productId, amount, currency, extra = null)` | Log an in-app purchase (`amount` powers revenue metrics). |
 | `LogProgression(status, progression, details = null, extra = null)` | Log a `Start` / `Complete` / `Fail` progression step. |
 | `LogError(message, stackTrace = null, extra = null)` | Manually report a handled exception (uncaught ones are captured automatically). |
@@ -233,6 +233,14 @@ build-time kill switch, define `GAMEMETRIC_DISABLED`.
 ---
 
 ## Release Notes
+
+### v1.1.3
+
+- **Nested event properties** — property values can now be nested dictionaries and
+  lists, serialized as real JSON objects/arrays (previously only primitives were
+  supported; anything else fell back to a `ToString()` that produced garbage).
+- **Exact numeric round-trip** — `double`/`float` properties now serialize with
+  `G17`/`G9`, which round-trip exactly, instead of the historically unreliable `R`.
 
 ### v1.1.2
 
