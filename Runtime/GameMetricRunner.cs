@@ -91,7 +91,13 @@ namespace GameMetricSDK
             }
 
             _flushTimer = 0f;
-            if (!_dispatcher.IsSending)
+
+            // Respect the exponential-backoff cooldown so a manual Flush(), the
+            // startup flush, or a pause-triggered flush can't hammer a server we've
+            // already backed off from. Events stay queued/cached and go out on the
+            // next eligible cycle — nothing is lost. Crash priority flushes bypass
+            // backoff via the Update() path, not here.
+            if (!_dispatcher.IsSending && !_dispatcher.InBackoff)
             {
                 StartCoroutine(_dispatcher.FlushRoutine());
             }

@@ -234,6 +234,14 @@ build-time kill switch, define `GAMEMETRIC_DISABLED`.
 
 ## Release Notes
 
+### v1.1.1
+
+- **Backoff fix** — a manual `Flush()`, the startup flush, and the pause-triggered
+  flush now respect the exponential-backoff cooldown instead of bypassing it, so
+  they can't hammer a server the SDK has already backed off from. Queued events
+  stay cached and deliver on the next eligible cycle; captured crashes still flush
+  with priority.
+
 ### v1.1.0
 
 - **Privacy / consent API** — `SetCollectionEnabled(bool)` and `IsCollectionEnabled`
