@@ -234,6 +234,12 @@ build-time kill switch, define `GAMEMETRIC_DISABLED`.
 
 ## Release Notes
 
+### v1.1.2
+
+- **Backoff jitter** — the retry backoff now applies ±20% jitter to each delay, so
+  a fleet of clients that failed together (e.g. during a backend outage) don't all
+  retry in lockstep and hammer the server the moment it recovers.
+
 ### v1.1.1
 
 - **Backoff fix** — a manual `Flush()`, the startup flush, and the pause-triggered

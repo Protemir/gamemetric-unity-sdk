@@ -32,9 +32,16 @@ namespace GameMetricSDK
         private readonly RemoteConfigStore _remoteConfig;
 
         // Exponential backoff on retryable failures so we don't hammer a down or
-        // flaky server: 2s, 4s, 8s, 16s, 32s, then capped at 60s. Reset on success.
+        // flaky server: 2s, 4s, 8s, 16s, 32s, then capped at 60s — each scaled by
+        // ±20% jitter so clients that failed together don't retry in lockstep
+        // (thundering herd). Reset on success.
         private const float BackoffBaseSeconds = 2f;
         private const float BackoffMaxSeconds = 60f;
+        private const float BackoffJitter = 0.2f;
+
+        // Per-instance RNG for backoff jitter. Only used on the main thread (from
+        // the flush coroutine), so System.Random's lack of thread-safety is fine.
+        private readonly System.Random _rng = new System.Random();
 
         private readonly ConcurrentQueue<GameMetricEvent> _queue = new ConcurrentQueue<GameMetricEvent>();
         private int _queuedCount;
@@ -274,9 +281,9 @@ namespace GameMetricSDK
             if (result == SendResult.Retryable)
             {
                 _consecutiveFailures++;
-                var delay = Mathf.Min(BackoffBaseSeconds * Mathf.Pow(2f, _consecutiveFailures - 1), BackoffMaxSeconds);
+                var delay = Backoff.DelaySeconds(_consecutiveFailures, BackoffBaseSeconds, BackoffMaxSeconds, BackoffJitter, _rng.NextDouble());
                 _backoffUntilRealtime = Time.realtimeSinceStartup + delay;
-                GameMetricLog.Info("Backing off " + delay.ToString("0") + "s after " + _consecutiveFailures + " failed attempt(s).");
+                GameMetricLog.Info("Backing off " + delay.ToString("0.#") + "s after " + _consecutiveFailures + " failed attempt(s).");
             }
             else
             {
