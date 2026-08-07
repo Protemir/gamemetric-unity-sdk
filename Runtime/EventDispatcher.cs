@@ -153,6 +153,16 @@ namespace GameMetricSDK
             }
         }
 
+        /// <summary>Discards everything queued without sending or persisting it. Used on consent withdrawal.</summary>
+        public void DiscardQueued()
+        {
+            while (_queue.TryDequeue(out var evt))
+            {
+                Interlocked.Decrement(ref _queuedCount);
+                EventPool.Return(evt);
+            }
+        }
+
         /// <summary>
         /// Drains the in-memory queue into serialized NDJSON lines on the calling
         /// (main) thread — cheap string building, no disk. The returned list is

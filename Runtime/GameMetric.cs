@@ -50,8 +50,14 @@ namespace GameMetricSDK
         public static bool IsInitialized => false;
         public static string SessionId => null;
         public static string UserId => null;
+        public static bool IsCollectionEnabled => false;
 #else
         private const string UserIdPrefKey = "gamemetric_user_id";
+
+        // Persisted opt-out/consent flag. Collection is on by default; the game
+        // gates it via SetCollectionEnabled based on its own consent flow, and the
+        // choice survives restarts.
+        private const string CollectionEnabledPrefKey = "gamemetric_collection_enabled";
 
         // Error-capture contract with the backend: captured Unity errors are sent
         // as this event, read back by GET /v1/analytics/crashes.
@@ -88,11 +94,19 @@ namespace GameMetricSDK
         private static string _version;
         private static bool _initialized;
 
+        // Runtime consent gate. Volatile because LogEvent may be called from any
+        // thread while SetCollectionEnabled flips it on the main thread. Defaults
+        // to true; Initialize loads the persisted choice.
+        private static volatile bool _collectionEnabled = true;
+
         // Session timing: start/pause bookkeeping + the resume-timeout decision.
         // GameMetric owns the id and the session_start/session_end emission.
         private static SessionTracker _session;
 
         public static bool IsInitialized => _initialized;
+
+        /// <summary>Whether data collection is currently enabled (see <see cref="SetCollectionEnabled"/>).</summary>
+        public static bool IsCollectionEnabled => _collectionEnabled;
 
         /// <summary>The current session id (regenerated after a long background per <see cref="GameMetricConfig.SessionTimeoutSeconds"/>).</summary>
         public static string SessionId => _sessionId;
@@ -166,6 +180,12 @@ namespace GameMetricSDK
             if (!_initialized)
             {
                 Debug.LogWarning("[GameMetric] LogEvent called before Initialize; event '" + eventName + "' ignored.");
+                return;
+            }
+
+            // Opted out — collect nothing.
+            if (!_collectionEnabled)
+            {
                 return;
             }
 
@@ -303,6 +323,58 @@ namespace GameMetricSDK
             _userId = userId;
             PlayerPrefs.SetString(UserIdPrefKey, userId);
             PlayerPrefs.Save();
+#endif
+        }
+
+        /// <summary>
+        /// Enables or disables all data collection at runtime — the consent /
+        /// opt-out switch. The choice is persisted and honored on the next launch.
+        /// While disabled, no events (including crashes and sessions) are collected
+        /// or sent, and no remote-config fetch runs. Opting out also purges any data
+        /// not yet delivered (the in-memory queue and the offline cache). Opting
+        /// back in resumes capture and starts a fresh session. Safe to call before
+        /// or after <see cref="Initialize()"/>; call it from the main thread.
+        /// </summary>
+        public static void SetCollectionEnabled(bool enabled)
+        {
+#if !GAMEMETRIC_DISABLED
+            // Persist first so the choice survives even if called before Initialize.
+            PlayerPrefs.SetInt(CollectionEnabledPrefKey, enabled ? 1 : 0);
+            PlayerPrefs.Save();
+
+            if (_collectionEnabled == enabled)
+            {
+                return;
+            }
+
+            _collectionEnabled = enabled;
+
+            // Before Initialize there's no pipeline to touch; Initialize applies it.
+            if (!_initialized)
+            {
+                return;
+            }
+
+            if (enabled)
+            {
+                // Opt back in: resume crash capture and open a fresh session.
+                if (_config.CaptureErrors)
+                {
+                    Application.logMessageReceived -= HandleUnityLog;
+                    Application.logMessageReceived += HandleUnityLog;
+                }
+
+                StartNewSession();
+                GameMetricLog.Info("Collection re-enabled.");
+            }
+            else
+            {
+                // Opt out: stop capturing and purge anything not yet delivered.
+                Application.logMessageReceived -= HandleUnityLog;
+                _dispatcher.DiscardQueued();
+                _store.Clear();
+                GameMetricLog.Info("Collection disabled; queued and cached events cleared.");
+            }
 #endif
         }
 
@@ -481,6 +553,9 @@ namespace GameMetricSDK
 
             GameMetricLog.DebugEnabled = enableDebugLogs;
 
+            // Honor a previously persisted opt-out (or a pre-Initialize SetCollectionEnabled call).
+            _collectionEnabled = PlayerPrefs.GetInt(CollectionEnabledPrefKey, 1) == 1;
+
             _config = new GameMetricConfig(apiKey, baseUrl) { EnableDebugLogs = enableDebugLogs };
             _sessionId = Guid.NewGuid().ToString("N");
             _session = new SessionTracker(_config.SessionTimeoutSeconds);
@@ -500,6 +575,14 @@ namespace GameMetricSDK
             // fallbacks. A fresh fetch (kicked below / on the timer) supersedes it.
             LoadCachedRemoteConfig();
 
+            // If the user previously opted out, ensure no personal data lingers to
+            // be flushed on startup (nothing is written while disabled, but the
+            // dispatcher's flush isn't consent-aware, so clear defensively).
+            if (!_collectionEnabled)
+            {
+                _store.Clear();
+            }
+
             var go = new GameObject("GameMetricRunner");
             go.hideFlags = HideFlags.HideInHierarchy;
             UnityEngine.Object.DontDestroyOnLoad(go);
@@ -515,19 +598,21 @@ namespace GameMetricSDK
             _initialized = true;
             _errorCapWarned = false;
 
-            // Auto-capture uncaught Unity errors/exceptions as crash events. The
-            // unsubscribe-then-subscribe pattern guarantees a single handler even
-            // if this were somehow reached twice.
-            if (_config.CaptureErrors)
+            // Auto-capture uncaught Unity errors/exceptions as crash events (only
+            // while collection is enabled). The unsubscribe-then-subscribe pattern
+            // guarantees a single handler even if this were somehow reached twice.
+            if (_config.CaptureErrors && _collectionEnabled)
             {
                 Application.logMessageReceived -= HandleUnityLog;
                 Application.logMessageReceived += HandleUnityLog;
             }
 
-            // One session_start per session, carrying device metadata.
+            // One session_start per session, carrying device metadata. No-op while
+            // opted out (LogEvent is gated on consent).
             LogEvent("session_start", BuildDeviceMetadata());
 
-            GameMetricLog.Info("Initialized. session=" + _sessionId + " platform=" + _platform + " version=" + _version);
+            GameMetricLog.Info("Initialized. session=" + _sessionId + " platform=" + _platform
+                + " version=" + _version + " collection=" + (_collectionEnabled ? "on" : "off"));
 
             // Kick an initial background refresh so the seeded snapshot is brought
             // up to date shortly after launch — no manual Fetch needed. Fires
@@ -627,7 +712,7 @@ namespace GameMetricSDK
         /// </summary>
         private static void CaptureError(string severity, string logType, string condition, string stackTrace, Dictionary<string, object> extra)
         {
-            if (_errorAggregator == null)
+            if (_errorAggregator == null || !_collectionEnabled)
             {
                 return;
             }
@@ -820,7 +905,8 @@ namespace GameMetricSDK
         /// <summary>Internal auto-refresh entry point (timer/resume/initial). Guarded and debounced; fire-and-forget.</summary>
         private static void RefreshRemoteConfigInternal()
         {
-            if (!_initialized || _runner == null || _remoteConfigFetching)
+            // Skip while opted out — a fetch would send the user id in the query.
+            if (!_initialized || _runner == null || _remoteConfigFetching || !_collectionEnabled)
             {
                 return;
             }

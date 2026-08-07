@@ -158,6 +158,28 @@ namespace GameMetricSDK
             }
         }
 
+        /// <summary>Deletes the entire offline cache. Used when a user opts out of collection.</summary>
+        public void Clear()
+        {
+            lock (_lock)
+            {
+                try
+                {
+                    TryDelete(_tempFilePath);
+                    if (File.Exists(_filePath))
+                    {
+                        File.Delete(_filePath);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    GameMetricLog.Warn("Failed to clear offline cache: " + ex.Message);
+                }
+
+                _lineCount = 0;
+            }
+        }
+
         // ----- core (all callers hold _lock) --------------------------------
 
         /// <summary>Counts the leftover file once per session so the in-memory count is authoritative thereafter.</summary>

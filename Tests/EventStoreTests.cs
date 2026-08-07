@@ -101,6 +101,19 @@ namespace GameMetricSDK.Tests
         }
 
         [Test]
+        public void Clear_DeletesTheEntireCache()
+        {
+            var s = NewStore();
+            s.AppendBlocking(L("a", "b", "c"));
+            Assert.IsTrue(s.HasDataAsync().GetAwaiter().GetResult());
+
+            s.Clear();
+
+            Assert.IsFalse(s.HasDataAsync().GetAwaiter().GetResult());
+            Assert.AreEqual(0, s.ReadAsync(10).GetAwaiter().GetResult().Count);
+        }
+
+        [Test]
         public void CacheFirstPipeline_ReadRemoveReadNext()
         {
             var s = NewStore();

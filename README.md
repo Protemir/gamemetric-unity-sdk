@@ -191,6 +191,24 @@ background work starts.
 
 ---
 
+## Privacy & Consent
+
+Data collection is **on by default**; gate it at runtime from your own consent flow:
+
+```csharp
+// e.g. after the player declines analytics in your consent dialog
+GameMetric.SetCollectionEnabled(false);
+```
+
+While disabled, no events (including crashes and sessions) are collected or sent
+and no remote-config fetch runs — and opting out **purges data not yet delivered**
+(the in-memory queue and the offline cache). The choice is persisted and honored
+on the next launch, and `SetCollectionEnabled` works before or after
+`Initialize()`. `IsCollectionEnabled` reports the current state. For a
+build-time kill switch, define `GAMEMETRIC_DISABLED`.
+
+---
+
 ## API Reference
 
 | Member | Description |
@@ -208,12 +226,20 @@ background work starts.
 | `OnConfigUpdated` (event) | Raised on the main thread when a fetch changes config values. |
 | `FetchRemoteConfigAsync()` | Force a remote-config refresh (usually unnecessary — auto-fetch is on by default). |
 | `SetUserId(userId)` | Override the anonymous install id with your own stable id (persisted). |
+| `SetCollectionEnabled(enabled)` | Consent / opt-out switch (persisted). Disabling stops all collection and purges undelivered data. |
 | `Flush()` | Request an immediate delivery attempt. |
-| `IsInitialized` / `SessionId` / `UserId` | Current SDK state. |
+| `IsInitialized` / `SessionId` / `UserId` / `IsCollectionEnabled` | Current SDK state. |
 
 ---
 
 ## Release Notes
+
+### v1.1.0
+
+- **Privacy / consent API** — `SetCollectionEnabled(bool)` and `IsCollectionEnabled`
+  let you opt players in or out of collection at runtime. The choice is persisted;
+  while disabled the SDK collects and sends nothing (events, crashes, sessions,
+  remote-config), and opting out purges data not yet delivered.
 
 ### v1.0.0
 
