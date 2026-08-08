@@ -843,9 +843,13 @@ namespace GameMetricSDK
         /// </summary>
         private static void InstallNativeCrashHandlersInternal()
         {
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if (UNITY_ANDROID || UNITY_IOS) && !UNITY_EDITOR
             var buildId = Application.identifier + "@" + _version;
+#endif
+#if UNITY_ANDROID && !UNITY_EDITOR
             GameMetricAndroidCrash.Install(NativeCrashDirectory(), buildId);
+#elif UNITY_IOS && !UNITY_EDITOR
+            GameMetriciOSCrash.Install(NativeCrashDirectory(), buildId);
 #endif
         }
 

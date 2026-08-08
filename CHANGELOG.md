@@ -5,6 +5,17 @@ All notable changes to the GameMetric Unity SDK are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-08-08
+
+### Added
+- **iOS native crash writer (Obj-C layer).** A bundled `.mm` plugin
+  (`Runtime/Plugins/iOS/GameMetricCrashHandler.mm`) installs an
+  `NSSetUncaughtExceptionHandler` that catches uncaught Objective-C exceptions and
+  writes a record into the v1.2.0 handoff pipeline, chaining to any previously
+  installed handler — the iOS analog of the v1.3.0 Android Java writer. Native
+  signals (SIGSEGV/Mach) and symbolication remain upcoming. Requires validation on
+  a device build.
+
 ## [1.3.0] - 2026-08-08
 
 ### Added
@@ -109,6 +120,7 @@ Initial public release.
   compile the SDK out completely.
 - **EditMode test suite** (Unity Test Framework / NUnit) covering the core logic.
 
+[1.4.0]: https://github.com/Protemir/gamemetric-unity-sdk/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/Protemir/gamemetric-unity-sdk/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/Protemir/gamemetric-unity-sdk/compare/v1.1.5...v1.2.0
 [1.1.5]: https://github.com/Protemir/gamemetric-unity-sdk/compare/v1.1.4...v1.1.5
