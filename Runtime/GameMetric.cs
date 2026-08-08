@@ -366,6 +366,7 @@ namespace GameMetricSDK
                 {
                     Application.logMessageReceivedThreaded -= HandleUnityLog;
                     Application.logMessageReceivedThreaded += HandleUnityLog;
+                    InstallNativeCrashHandlersInternal();
                 }
 
                 StartNewSession();
@@ -609,6 +610,7 @@ namespace GameMetricSDK
             {
                 Application.logMessageReceivedThreaded -= HandleUnityLog;
                 Application.logMessageReceivedThreaded += HandleUnityLog;
+                InstallNativeCrashHandlersInternal();
             }
 
             // One session_start per session, carrying device metadata. No-op while
@@ -833,6 +835,19 @@ namespace GameMetricSDK
         /// </summary>
         private static string NativeCrashDirectory() =>
             System.IO.Path.Combine(Application.persistentDataPath, "gamemetric", "native-crashes");
+
+        /// <summary>
+        /// Installs the platform native crash handlers (which write records this
+        /// SDK later picks up). No-op on platforms without a native writer yet.
+        /// Idempotent — safe to call again on opt-in.
+        /// </summary>
+        private static void InstallNativeCrashHandlersInternal()
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            var buildId = Application.identifier + "@" + _version;
+            GameMetricAndroidCrash.Install(NativeCrashDirectory(), buildId);
+#endif
+        }
 
         /// <summary>
         /// On startup, drains any native crash records left by a platform handler

@@ -189,9 +189,10 @@ delivery pipeline is never flooded.
 process, so they can't be sent in the moment. A platform crash handler writes a
 small JSON record under `persistentDataPath/gamemetric/native-crashes/`, and on the
 next launch the SDK emits each as a fatal `error` event (`is_native: true`,
-back-dated to the crash time) through the normal pipeline, then deletes it. The
-managed pickup + delivery is in place; the platform native writers and address
-symbolication are upcoming.
+back-dated to the crash time) through the normal pipeline, then deletes it. On
+**Android**, a bundled Java uncaught-exception handler writes these records
+(catching Java/Kotlin crashes the managed hook can't see). Android NDK signals,
+iOS, and address symbolication are upcoming.
 
 ### Compiling the SDK out
 
@@ -243,6 +244,15 @@ build-time kill switch, define `GAMEMETRIC_DISABLED`.
 ---
 
 ## Release Notes
+
+### v1.3.0
+
+- **Android native crash writer (Java layer)** — a bundled uncaught-exception
+  handler (`dev.gamemetric.sdk.GameMetricCrashHandler`) catches uncaught
+  Java/Kotlin exceptions, including ones from third-party Android SDKs / JNI that
+  the managed hook can't see, and writes them into the v1.2.0 handoff pipeline
+  (chaining to Unity's own handler). Android NDK signals (SIGSEGV/il2cpp), iOS, and
+  symbolication remain upcoming. _Validate on a device build before relying on it._
 
 ### v1.2.0
 
