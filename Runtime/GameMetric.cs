@@ -625,6 +625,13 @@ namespace GameMetricSDK
             {
                 RefreshRemoteConfigInternal();
             }
+
+            // Deliver any native crash a platform handler captured before the
+            // process died last run (handed off on disk; see NativeCrashRecord).
+            if (_config.CaptureErrors)
+            {
+                ReportPendingNativeCrashesInternal();
+            }
         }
 
         private static string ResolveUserId()
@@ -816,6 +823,102 @@ namespace GameMetricSDK
         /// </summary>
         private static float ErrorClockSeconds() =>
             (float)(System.Diagnostics.Stopwatch.GetTimestamp() / (double)System.Diagnostics.Stopwatch.Frequency);
+
+        // ----- native crash handoff -----------------------------------------
+
+        /// <summary>
+        /// Directory a platform crash handler writes native crash records into
+        /// (one <c>*.json</c> file per crash; see <see cref="NativeCrashRecord"/>).
+        /// Native writers use <c>Application.persistentDataPath</c> + this subpath.
+        /// </summary>
+        private static string NativeCrashDirectory() =>
+            System.IO.Path.Combine(Application.persistentDataPath, "gamemetric", "native-crashes");
+
+        /// <summary>
+        /// On startup, drains any native crash records left by a platform handler
+        /// before the process died last run: parse each, emit it (back-dated to the
+        /// crash time) through the normal pipeline, then delete the file. Best-effort
+        /// and fully guarded — a bad handoff file must never break Initialize.
+        /// </summary>
+        private static void ReportPendingNativeCrashesInternal()
+        {
+            string[] files;
+            try
+            {
+                var dir = NativeCrashDirectory();
+                if (!System.IO.Directory.Exists(dir))
+                {
+                    return;
+                }
+
+                files = System.IO.Directory.GetFiles(dir, "*.json");
+            }
+            catch (Exception ex)
+            {
+                GameMetricLog.Warn("Could not scan native-crash directory: " + ex.Message);
+                return;
+            }
+
+            foreach (var file in files)
+            {
+                try
+                {
+                    var json = System.IO.File.ReadAllText(file);
+                    if (NativeCrashRecord.TryParse(json, out var record))
+                    {
+                        EmitNativeCrash(record);
+                    }
+                    else
+                    {
+                        GameMetricLog.Warn("Discarding unparseable native-crash file: " + System.IO.Path.GetFileName(file));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    GameMetricLog.Warn("Failed to read native-crash file: " + ex.Message);
+                }
+                finally
+                {
+                    // One-shot: once emitted the event lives in our durable pipeline
+                    // (queue + offline cache), so drop the source regardless of the
+                    // outcome to avoid re-emitting or a poison file looping forever.
+                    try { System.IO.File.Delete(file); } catch { /* best effort */ }
+                }
+            }
+        }
+
+        /// <summary>Emits a parsed native crash as a fatal "error" event, back-dated to when the crash happened.</summary>
+        private static void EmitNativeCrash(NativeCrashRecord record)
+        {
+            const string severity = "fatal";
+            var condition = Truncate(
+                !string.IsNullOrEmpty(record.Message) ? record.Message
+                : !string.IsNullOrEmpty(record.Type) ? record.Type
+                : "Native crash",
+                MaxConditionChars);
+            var stack = string.IsNullOrEmpty(record.Stack) ? null : Truncate(record.Stack, MaxStackTraceChars);
+            var hash = ErrorAggregator.SignatureHash(severity, condition, stack);
+
+            var props = new Dictionary<string, object>(8)
+            {
+                { "severity", severity },
+                { "log_type", "Native" },
+                { "condition", condition },
+                { "error_id", hash.ToString("x8") },
+                { "count", 1 },
+                { "is_native", true },
+            };
+
+            if (!string.IsNullOrEmpty(stack)) props["stack_trace"] = stack;
+            if (!string.IsNullOrEmpty(record.Type)) props["crash_type"] = record.Type;
+            if (!string.IsNullOrEmpty(record.Platform)) props["native_platform"] = record.Platform;
+            if (!string.IsNullOrEmpty(record.BuildId)) props["build_id"] = record.BuildId;
+
+            // Back-date to the real crash time (from the record) so the event isn't
+            // mis-attributed to this launch; fall back to now if it wasn't recorded.
+            var when = record.HasTimestamp ? record.TimestampUtc : DateTime.UtcNow;
+            LogEventInternal(ErrorEventName, when, props);
+        }
 
         // ----- session lifecycle (wired to the runner) ----------------------
 

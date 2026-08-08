@@ -185,6 +185,14 @@ and the Job System** (capture hooks `logMessageReceivedThreaded`). Identical err
 per-frame crash loop becomes a couple of counted events instead of hundreds — the
 delivery pipeline is never flooded.
 
+**Native crashes** (iOS signal / Android SIGSEGV / il2cpp hard-crash) kill the
+process, so they can't be sent in the moment. A platform crash handler writes a
+small JSON record under `persistentDataPath/gamemetric/native-crashes/`, and on the
+next launch the SDK emits each as a fatal `error` event (`is_native: true`,
+back-dated to the crash time) through the normal pipeline, then deletes it. The
+managed pickup + delivery is in place; the platform native writers and address
+symbolication are upcoming.
+
 ### Compiling the SDK out
 
 Define `GAMEMETRIC_DISABLED` (Project Settings → Player → Scripting Define Symbols)
@@ -235,6 +243,16 @@ build-time kill switch, define `GAMEMETRIC_DISABLED`.
 ---
 
 ## Release Notes
+
+### v1.2.0
+
+- **Native crash handoff (managed pipeline)** — the SDK now reads native crash
+  records left on disk by a platform handler (under
+  `persistentDataPath/gamemetric/native-crashes/`) and, on the next launch, emits
+  each as a fatal `error` event (`is_native: true`, back-dated to the crash time)
+  through the normal delivery pipeline, then deletes the file. This ships the
+  platform-agnostic contract + pickup; the platform native writers (iOS/Android/
+  il2cpp) and symbolication follow.
 
 ### v1.1.5
 

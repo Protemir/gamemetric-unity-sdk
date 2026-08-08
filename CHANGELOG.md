@@ -5,6 +5,17 @@ All notable changes to the GameMetric Unity SDK are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-08-08
+
+### Added
+- **Native crash handoff (managed pipeline).** A platform crash handler writes a
+  JSON crash record to `persistentDataPath/gamemetric/native-crashes/`; on the next
+  launch the SDK parses each record, emits it as a fatal `error` event
+  (`is_native: true`, back-dated to the crash time) through the normal delivery
+  pipeline, then deletes the file. Defines the platform-agnostic on-disk contract
+  and the pickup/delivery side. The platform native writers (iOS/Android/il2cpp)
+  and address symbolication are upcoming phases.
+
 ## [1.1.5] - 2026-08-07
 
 ### Added
@@ -87,6 +98,7 @@ Initial public release.
   compile the SDK out completely.
 - **EditMode test suite** (Unity Test Framework / NUnit) covering the core logic.
 
+[1.2.0]: https://github.com/Protemir/gamemetric-unity-sdk/compare/v1.1.5...v1.2.0
 [1.1.5]: https://github.com/Protemir/gamemetric-unity-sdk/compare/v1.1.4...v1.1.5
 [1.1.4]: https://github.com/Protemir/gamemetric-unity-sdk/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/Protemir/gamemetric-unity-sdk/compare/v1.1.2...v1.1.3
