@@ -7,7 +7,7 @@
 // out of git, so a check that stat()s the filesystem passes on the maintainer's machine and
 // still ships a package missing the content it advertises. What consumers receive is what
 // is committed.
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 
 const problems = [];
@@ -80,6 +80,29 @@ for (const required of ['README.md', 'CHANGELOG.md', 'LICENSE']) {
 // Runtime code that is not committed is the same failure as a missing sample, just louder.
 if (!isInRepository('Runtime')) {
   problems.push('Runtime/ contains no tracked files — the package would ship without code');
+}
+
+// The same check one level down. "Runtime/ has at least one tracked file" passes while a
+// single new file sits untracked, and that file is missing from every consumer's package —
+// Unity then fails to compile the assembly against a type that exists only on the
+// maintainer's machine. This is the Samples~ failure again, per file instead of per folder,
+// and per file is where it actually happens: one .gitignore line, one forgotten `git add`.
+for (const folder of ['Runtime', 'Editor', 'Tests', 'Samples~']) {
+  if (!existsSync(folder)) continue;
+
+  for (const file of readdirSync(folder, { recursive: true, withFileTypes: true })) {
+    if (!file.isFile()) continue;
+
+    // parentPath is the directory the entry was found in, already relative to cwd.
+    const path = `${file.parentPath ?? folder}/${file.name}`.replaceAll('\\', '/');
+
+    // Unity's own build leftovers are meant to be absent.
+    if (/\.(meta|csproj|user)$/.test(path)) continue;
+
+    if (!tracked.has(path)) {
+      problems.push(`${path} exists on disk but is NOT tracked by git, so it will not ship`);
+    }
+  }
 }
 
 // Relative links in the docs of a public package: a reader who follows one and gets a 404
