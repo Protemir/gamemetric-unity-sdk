@@ -1,0 +1,13 @@
+version: 2
+updates:
+  # Actions are the only dependency this repository has — the package itself has none, since
+  # a Unity package ships source. Pinned majors go stale silently: v4 of checkout and
+  # setup-node were being forced onto Node 24 by the runner before the deprecation warning
+  # made it visible, and nothing here would have surfaced that on its own.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: 'ci'
