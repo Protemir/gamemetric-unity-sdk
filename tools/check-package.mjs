@@ -9,6 +9,7 @@
 // is committed.
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { newestVersion, sectionFor } from './changelog.mjs';
 
 const problems = [];
 
@@ -177,13 +178,21 @@ for (const doc of ['README.md', 'CONTRIBUTING.md', 'Tests/README.md']) {
   }
 }
 
-const changelogTop = readFileSync('CHANGELOG.md', 'utf8').match(/^## \[(\d+\.\d+\.\d+)\]/m)?.[1];
+const changelog = readFileSync('CHANGELOG.md', 'utf8');
+const changelogTop = newestVersion(changelog);
+
 if (!changelogTop) {
   problems.push('CHANGELOG.md has no "## [x.y.z]" release heading');
 } else if (changelogTop !== pkg.version) {
   problems.push(
     `version mismatch: package.json says ${pkg.version}, newest CHANGELOG entry is ${changelogTop}`,
   );
+} else if (sectionFor(changelog, changelogTop) === '') {
+  // The section is the release notes, so an empty one means an empty GitHub release. That
+  // failure is already caught — but at release time, by which point the tag has been pushed
+  // and fixing it means deleting and re-pushing a tag someone may have already fetched.
+  // Checked here it is a red build on a branch, which costs nothing.
+  problems.push(`the "## [${changelogTop}]" section in CHANGELOG.md is empty — release notes come from it`);
 }
 
 if (problems.length > 0) {

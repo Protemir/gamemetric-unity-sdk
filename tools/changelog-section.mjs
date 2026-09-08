@@ -5,6 +5,7 @@
 //
 // Usage: node tools/changelog-section.mjs 1.4.0
 import { readFileSync } from 'node:fs';
+import { sectionFor } from './changelog.mjs';
 
 const version = process.argv[2];
 
@@ -13,23 +14,12 @@ if (!version) {
   process.exit(2);
 }
 
-const changelog = readFileSync('CHANGELOG.md', 'utf8');
+const body = sectionFor(readFileSync('CHANGELOG.md', 'utf8'), version);
 
-// Scanned line by line rather than with one regex: the obvious pattern needs both "start of
-// line" and "end of input", and in JavaScript the /m/ flag that gives the first redefines $
-// to mean end of line, which truncates the section at its first blank line.
-const lines = changelog.split('\n');
-const isReleaseHeading = (line) => /^## \[\d+\.\d+\.\d+\]/.test(line);
-const start = lines.findIndex((line) => line.startsWith(`## [${version}]`));
-
-if (start === -1) {
+if (body === null) {
   console.error(`CHANGELOG.md has no "## [${version}]" section.`);
   process.exit(1);
 }
-
-const rest = lines.slice(start + 1);
-const nextHeading = rest.findIndex(isReleaseHeading);
-const body = (nextHeading === -1 ? rest : rest.slice(0, nextHeading)).join('\n').trim();
 
 if (body.length === 0) {
   console.error(`The "## [${version}]" section in CHANGELOG.md is empty.`);
