@@ -1,0 +1,52 @@
+name: Release
+
+# Publishing is driven by the tag, so a release cannot be forgotten after a version bump —
+# pushing v1.4.1 is the whole action, and the notes come from the changelog rather than
+# being retyped into the GitHub UI.
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # A tag that disagrees with the manifest is the mistake worth stopping on: consumers
+      # install by tag and get whatever package.json claims, so the two must be one thing.
+      - name: Check the tag matches package.json
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $PKG_VERSION" >&2
+            exit 1
+          fi
+          echo "version=$PKG_VERSION" >> "$GITHUB_OUTPUT"
+        id: version
+
+      # The same checks CI runs on every push, repeated here: a tag can be pushed at a
+      # commit that never went through CI.
+      - name: Check package manifest and changelog
+        run: node tools/check-package.mjs
+
+      - name: Extract release notes from the changelog
+        run: node tools/changelog-section.mjs "${{ steps.version.outputs.version }}" > RELEASE_NOTES.md
+
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file RELEASE_NOTES.md \
+            --verify-tag
