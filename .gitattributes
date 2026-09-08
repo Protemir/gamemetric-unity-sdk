@@ -1,0 +1,22 @@
+# Unity source and asset metadata are text; normalise to LF so a Windows checkout does not
+# rewrite endings and produce diffs that touch every line of a file nobody edited.
+* text=auto eol=lf
+
+*.cs text eol=lf diff=csharp
+*.meta text eol=lf
+*.asmdef text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.java text eol=lf
+*.mm text eol=lf
+*.h text eol=lf
+
+# Binary assets must never be line-ending converted — doing so corrupts them silently.
+*.png binary
+*.jpg binary
+*.psd binary
+*.dll binary
+*.so binary
+*.a binary
+*.aar binary
+*.unitypackage binary
