@@ -28,3 +28,20 @@ dependencies, so they can also be run headlessly in a plain .NET NUnit project
 that links the same source + test files — handy for CI without a Unity license.
 `EventStoreTests` needs the Unity runtime (`Application.temporaryCachePath`) and
 runs only in the Test Runner.
+
+## Not covered
+
+Written down rather than left implicit, so a gap is a known gap and not a
+pleasant assumption:
+
+| Area | Why it is uncovered | What it would take |
+|---|---|---|
+| `EventDispatcher.Classify` and backoff progression | Needs `UnityWebRequest` and coroutine scheduling, neither of which exists in EditMode | PlayMode tests, or an interface over the transport so retry classification can be driven from a fake |
+| `RemoteConfigCache` | Reads and writes through Unity's persistent data path | Same treatment as `EventStore` — an isolated temp dir and a Unity-side suite |
+| Native crash writers (Android Java, iOS Obj-C) | The handoff is exercised only end to end, on a device build | A device or emulator run; the managed `NativeCrashRecord` parsing is covered, the native side that produces those records is not |
+| Session lifecycle inside `GameMetricRunner` | `SessionTracker` is covered as pure logic, but the pause/resume/quit wiring that calls it is not | PlayMode tests driving application focus events |
+
+The pattern in every row is the same: logic that was extracted into a
+Unity-free type is tested, and whatever still touches the engine directly is
+not. That is also the cheapest way to close each gap — pull the decision out of
+the engine-facing class, not spin up more infrastructure around it.
