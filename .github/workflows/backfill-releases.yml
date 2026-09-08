@@ -1,0 +1,77 @@
+name: Backfill releases
+
+# One-off catch-up for tags that predate the Release workflow: every version up to v1.4.0
+# was tagged without a GitHub release, so the releases page is empty for the entire history
+# of the package. Run it from the Actions tab.
+#
+# Idempotent — a tag that already has a release is skipped, so re-running is harmless. Keep
+# the file after it has been used: it is also the recovery path if a future release
+# workflow fails and the tag is already pushed.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'List what would be created without creating anything'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Tags are not fetched by default, and they are the entire input here.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Create a release for every tag that lacks one
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          created=0
+          skipped=0
+          failed=0
+
+          # Sorted by version so the releases page reads in order rather than by tag age.
+          for tag in $(git tag -l 'v*.*.*' | sort -V); do
+            version="${tag#v}"
+
+            if gh release view "$tag" >/dev/null 2>&1; then
+              echo "= $tag already has a release"
+              skipped=$((skipped + 1))
+              continue
+            fi
+
+            # Notes come from the changelog in the working tree, not from the tagged commit:
+            # older tags predate entries that were written up afterwards.
+            if ! node tools/changelog-section.mjs "$version" > notes.md; then
+              echo "! $tag has no changelog section, skipping" >&2
+              failed=$((failed + 1))
+              continue
+            fi
+
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "+ would create $tag ($(wc -l < notes.md) lines of notes)"
+              created=$((created + 1))
+              continue
+            fi
+
+            # --verify-tag refuses to invent a tag that does not exist; every release here
+            # must point at history that already shipped.
+            gh release create "$tag" --title "$tag" --notes-file notes.md --verify-tag
+            echo "+ created $tag"
+            created=$((created + 1))
+          done
+
+          echo "created=$created skipped=$skipped failed=$failed"
+          [ "$failed" -eq 0 ]
