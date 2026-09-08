@@ -51,18 +51,72 @@ if (!/^\d+\.\d+\.\d+$/.test(pkg.version ?? '')) {
 }
 
 // A broken asmdef fails compilation only once Unity opens the project.
-for (const asmdef of [
+const asmdefPaths = [
   'Runtime/GameMetricSDK.Runtime.asmdef',
   'Editor/GameMetricSDK.Editor.asmdef',
   'Tests/GameMetricSDK.Tests.asmdef',
-]) {
+];
+
+/** Parsed asmdefs, keyed by path. Entries that failed to parse are simply absent. */
+const asmdefs = new Map();
+
+for (const asmdef of asmdefPaths) {
   requireInRepository(asmdef, 'assembly definition');
   if (existsSync(asmdef)) {
     try {
-      JSON.parse(readFileSync(asmdef, 'utf8'));
+      asmdefs.set(asmdef, JSON.parse(readFileSync(asmdef, 'utf8')));
     } catch (e) {
       problems.push(`${asmdef} is not valid JSON: ${e.message}`);
     }
+  }
+}
+
+// How the three assemblies are wired together. Unity resolves references by assembly name,
+// so a rename breaks every reference to it — and reports that only when the project is
+// opened, which for a package means at the consumer, not here.
+const assemblyNames = new Set([...asmdefs.values()].map((a) => a.name));
+
+// Unity's own assemblies and precompiled DLLs are not ours to resolve.
+const external = /^(Unity|UnityEngine|UnityEditor|nunit)/;
+
+for (const [path, asmdef] of asmdefs) {
+  const expected = path.slice(path.lastIndexOf('/') + 1, -'.asmdef'.length);
+  if (asmdef.name !== expected) {
+    problems.push(`${path} declares name "${asmdef.name}" but Unity expects "${expected}"`);
+  }
+
+  for (const reference of asmdef.references ?? []) {
+    if (external.test(reference)) continue;
+    if (!assemblyNames.has(reference)) {
+      problems.push(`${path} references "${reference}", which no assembly in this package defines`);
+    }
+  }
+}
+
+const runtime = asmdefs.get('Runtime/GameMetricSDK.Runtime.asmdef');
+const tests = asmdefs.get('Tests/GameMetricSDK.Tests.asmdef');
+
+// The failure this catches is a silent one: an editor-only Runtime assembly compiles, the
+// package imports cleanly, the game builds — and ships with no analytics at all, because
+// none of the SDK is in the player.
+if (runtime && (runtime.includePlatforms ?? []).length > 0) {
+  problems.push(
+    `Runtime assembly is limited to platforms [${runtime.includePlatforms.join(', ')}] — ` +
+      'it must ship everywhere, or builds silently contain no SDK',
+  );
+}
+
+// The mirror image: test code compiled into a player build. It would drag NUnit into the
+// shipped game and is exactly what these two settings exist to prevent.
+if (tests) {
+  if (!(tests.includePlatforms ?? []).includes('Editor')) {
+    problems.push('Tests assembly is not restricted to the Editor — test code would ship in builds');
+  }
+  if (!(tests.defineConstraints ?? []).includes('UNITY_INCLUDE_TESTS')) {
+    problems.push('Tests assembly is missing the UNITY_INCLUDE_TESTS define constraint');
+  }
+  if (!(tests.references ?? []).includes(runtime?.name)) {
+    problems.push('Tests assembly does not reference the Runtime assembly — nothing would be tested');
   }
 }
 
