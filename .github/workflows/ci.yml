@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Unity itself is not available here, so this covers the release mistakes that do not
+      # need it: a malformed manifest or asmdef, a missing sample path, and a package
+      # version that disagrees with the changelog.
+      - name: Check package manifest and changelog
+        run: node tools/check-package.mjs
