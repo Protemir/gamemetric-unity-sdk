@@ -82,6 +82,24 @@ if (!isInRepository('Runtime')) {
   problems.push('Runtime/ contains no tracked files — the package would ship without code');
 }
 
+// Relative links in the docs of a public package: a reader who follows one and gets a 404
+// concludes the package is unmaintained, and renaming a file is all it takes to create one.
+for (const doc of ['README.md', 'CONTRIBUTING.md', 'Tests/README.md']) {
+  if (!existsSync(doc)) continue;
+
+  const directory = doc.includes('/') ? doc.slice(0, doc.lastIndexOf('/') + 1) : '';
+
+  for (const [, target] of readFileSync(doc, 'utf8').matchAll(/\]\(([^)]+)\)/g)) {
+    // External links and in-page anchors are not ours to verify.
+    if (/^(https?:|mailto:|#)/.test(target)) continue;
+
+    const resolved = (directory + target.split('#')[0].replace(/^\.\//, '')).replace(/\/+$/, '');
+    if (resolved && !isInRepository(resolved)) {
+      problems.push(`${doc} links to "${target}", which is not in the repository`);
+    }
+  }
+}
+
 const changelogTop = readFileSync('CHANGELOG.md', 'utf8').match(/^## \[(\d+\.\d+\.\d+)\]/m)?.[1];
 if (!changelogTop) {
   problems.push('CHANGELOG.md has no "## [x.y.z]" release heading');
