@@ -3,6 +3,11 @@
 Thumbs.db
 *.swp
 *~
+# Unity marks folders it must not import as assets with a trailing tilde, so the editor
+# backup pattern above also swallows them. Samples~ is package content and must ship:
+# without it the Package Manager offers a sample whose Import does nothing.
+!Samples~/
+!Samples~/**
 
 # IDE
 .vs/
