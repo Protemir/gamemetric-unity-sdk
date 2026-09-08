@@ -1,10 +1,44 @@
 // Release consistency check. Unity cannot run in CI here, so this covers the mistakes that
-// do not need Unity to catch: malformed manifests, and a version that disagrees with the
-// changelog. A package published with a stale version is worse than an unpublished one —
-// consumers pin what the manifest claims, not what the changelog says.
+// do not need Unity to catch: malformed manifests, a version that disagrees with the
+// changelog, and content the manifest promises that is not actually in the repository.
+//
+// Everything is checked against `git ls-files`, not the working copy. That distinction is
+// the whole point: Samples~ sat on disk for every release while .gitignore quietly kept it
+// out of git, so a check that stat()s the filesystem passes on the maintainer's machine and
+// still ships a package missing the content it advertises. What consumers receive is what
+// is committed.
 import { readFileSync, existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 
 const problems = [];
+
+/** Every path git tracks, as a Set for exact lookups. */
+const tracked = new Set(
+  execFileSync('git', ['ls-files'], { encoding: 'utf8' })
+    .split('\n')
+    .filter(Boolean),
+);
+
+/** True when the path is a tracked file, or a directory holding at least one tracked file. */
+const isInRepository = (path) => {
+  const normalised = path.replace(/\/+$/, '');
+  if (tracked.has(normalised)) return true;
+  const asDirectory = `${normalised}/`;
+  for (const entry of tracked) {
+    if (entry.startsWith(asDirectory)) return true;
+  }
+  return false;
+};
+
+/** Flags the case that is easy to miss: present locally, absent from the package. */
+const requireInRepository = (path, what) => {
+  if (isInRepository(path)) return;
+  problems.push(
+    existsSync(path)
+      ? `${what} exists on disk but is NOT tracked by git, so it will not ship: ${path} (check .gitignore)`
+      : `${what} does not exist: ${path}`,
+  );
+};
 
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
 
@@ -16,27 +50,50 @@ if (!/^\d+\.\d+\.\d+$/.test(pkg.version ?? '')) {
   problems.push(`package.json version "${pkg.version}" is not MAJOR.MINOR.PATCH`);
 }
 
-// Every asmdef must parse: a broken one fails compilation only once Unity opens the project.
-for (const asmdef of ['Runtime/GameMetricSDK.Runtime.asmdef', 'Editor/GameMetricSDK.Editor.asmdef', 'Tests/GameMetricSDK.Tests.asmdef']) {
-  if (!existsSync(asmdef)) { problems.push(`missing ${asmdef}`); continue; }
-  try { JSON.parse(readFileSync(asmdef, 'utf8')); }
-  catch (e) { problems.push(`${asmdef} is not valid JSON: ${e.message}`); }
+// A broken asmdef fails compilation only once Unity opens the project.
+for (const asmdef of [
+  'Runtime/GameMetricSDK.Runtime.asmdef',
+  'Editor/GameMetricSDK.Editor.asmdef',
+  'Tests/GameMetricSDK.Tests.asmdef',
+]) {
+  requireInRepository(asmdef, 'assembly definition');
+  if (existsSync(asmdef)) {
+    try {
+      JSON.parse(readFileSync(asmdef, 'utf8'));
+    } catch (e) {
+      problems.push(`${asmdef} is not valid JSON: ${e.message}`);
+    }
+  }
 }
 
-// A sample path that does not exist shows up in the Package Manager as an import that fails.
+// A sample path missing from the package shows in the Package Manager as an Import that
+// silently does nothing.
 for (const sample of pkg.samples ?? []) {
-  if (!existsSync(sample.path)) problems.push(`sample path does not exist: ${sample.path}`);
+  requireInRepository(sample.path, `sample "${sample.displayName ?? sample.path}"`);
+}
+
+// Files the manifest links to, and the ones a consumer expects to find.
+for (const required of ['README.md', 'CHANGELOG.md', 'LICENSE']) {
+  requireInRepository(required, 'required file');
+}
+
+// Runtime code that is not committed is the same failure as a missing sample, just louder.
+if (!isInRepository('Runtime')) {
+  problems.push('Runtime/ contains no tracked files — the package would ship without code');
 }
 
 const changelogTop = readFileSync('CHANGELOG.md', 'utf8').match(/^## \[(\d+\.\d+\.\d+)\]/m)?.[1];
-if (!changelogTop) problems.push('CHANGELOG.md has no "## [x.y.z]" release heading');
-else if (changelogTop !== pkg.version) {
-  problems.push(`version mismatch: package.json says ${pkg.version}, newest CHANGELOG entry is ${changelogTop}`);
+if (!changelogTop) {
+  problems.push('CHANGELOG.md has no "## [x.y.z]" release heading');
+} else if (changelogTop !== pkg.version) {
+  problems.push(
+    `version mismatch: package.json says ${pkg.version}, newest CHANGELOG entry is ${changelogTop}`,
+  );
 }
 
 if (problems.length > 0) {
-  console.error('Package checks failed:\n' + problems.map(p => `  - ${p}`).join('\n'));
+  console.error('Package checks failed:\n' + problems.map((p) => `  - ${p}`).join('\n'));
   process.exit(1);
 }
 
-console.log(`package ${pkg.name} ${pkg.version}: all checks passed`);
+console.log(`package ${pkg.name} ${pkg.version}: all checks passed (${tracked.size} tracked files)`);
