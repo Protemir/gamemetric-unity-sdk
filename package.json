@@ -9,6 +9,9 @@
     "name": "GameMetric",
     "url": "https://gamemetric.dev"
   },
+  "documentationUrl": "https://github.com/Protemir/gamemetric-unity-sdk#readme",
+  "changelogUrl": "https://github.com/Protemir/gamemetric-unity-sdk/blob/main/CHANGELOG.md",
+  "licensesUrl": "https://github.com/Protemir/gamemetric-unity-sdk/blob/main/LICENSE",
   "keywords": [
     "analytics",
     "gamemetric",
