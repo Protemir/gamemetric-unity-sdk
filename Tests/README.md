@@ -20,6 +20,9 @@ exposed to it via `InternalsVisibleTo` in `Runtime/AssemblyInfo.cs`.
 | `JsonWriterTests` | Event envelope + property types, string escaping, NaN/Infinity → `null` (P0 regression) |
 | `EventPoolTests` | Pool reuse resets events; `GameMetricEvent.Reset` clears every field |
 | `EventStoreTests` | Real file I/O in an isolated temp dir: append/read/remove, trim-to-newest, cold-start count, cache-first pipeline |
+| `BackoffTests` | Exponential growth, cap at max, jitter inside ±20% and reaching both bounds, non-positive attempt clamped to the first delay |
+| `InMemoryEventCacheTests` | The same contract as `EventStoreTests` without the disk: append/read-oldest, remove-first, removing more than present, trim-to-newest over cap, blank lines ignored |
+| `NativeCrashRecordTests` | Parsing the handoff record the native writers produce: full and minimal records, stack as an array joined with newlines, absent timestamp and schema, and rejection of identityless or malformed JSON |
 
 ## Note
 

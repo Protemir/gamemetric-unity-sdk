@@ -160,6 +160,23 @@ for (const folder of ['Runtime', 'Editor', 'Tests', 'Samples~']) {
   }
 }
 
+// Tests/README.md is a map of what is covered and, more usefully, what is not. It only earns
+// that trust while it is complete: three suites had been added without ever reaching the
+// table, so the document quietly under-reported coverage — and a reader planning work from
+// its "Not covered" section is exactly the reader who cannot afford that.
+if (existsSync('Tests') && existsSync('Tests/README.md')) {
+  const coverage = readFileSync('Tests/README.md', 'utf8');
+
+  for (const file of readdirSync('Tests')) {
+    if (!file.endsWith('Tests.cs')) continue;
+
+    const suite = file.slice(0, -'.cs'.length);
+    if (!coverage.includes(suite)) {
+      problems.push(`Tests/README.md does not mention ${suite} — the coverage table is out of date`);
+    }
+  }
+}
+
 // Relative links in the docs of a public package: a reader who follows one and gets a 404
 // concludes the package is unmaintained, and renaming a file is all it takes to create one.
 for (const doc of ['README.md', 'CONTRIBUTING.md', 'Tests/README.md']) {
